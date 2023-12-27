@@ -13,4 +13,5 @@ pub struct Config {
     pub discord_token: String,
     pub additional_headers: Option<String>,
     pub persistent_path: PathBuf,
+    pub emoji_path: PathBuf
 }
