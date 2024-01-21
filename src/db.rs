@@ -79,9 +79,11 @@ impl PersistentDB {
         self.flush();
     }
 
-    // pub fn remove_dictionary_word(&self, word: &str) {
-    //     self.data
-    // }
+    pub fn remove_dictionary_word(&self, word: &str) {
+        self.data.write().unwrap().dictionary.remove(word);
+
+        self.flush();
+    }
 
     fn flush(&self) {
         File::create(&self.file)
@@ -152,9 +154,12 @@ pub struct EmojiDB {
 
 impl EmojiDB {
     fn new(file: &Path) -> Result<Self, std::io::Error> {
-        let json: HashMap<String, EmojiStructure> =
+        let mut json: HashMap<String, EmojiStructure> =
             serde_json::from_reader(BufReader::new(File::open(file)?))
                 .expect("Emoji DB is corrupt");
+
+        let need_remove_keys = ["。", "、"];
+        need_remove_keys.map(|k| json.remove(k).unwrap());
 
         let data = Arc::new(
             json.iter()

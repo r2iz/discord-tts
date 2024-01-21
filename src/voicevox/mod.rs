@@ -3,11 +3,12 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use futures::future;
+use moka::future::Cache;
 use reqwest::{header::CONTENT_TYPE, Url};
 use tap::prelude::*;
 
-use crate::voicevox::model::{Speaker, SpeakerStyle};
 use self::model::SpeakerStyleView;
+use crate::voicevox::model::{Speaker, SpeakerStyle};
 
 pub mod model;
 
@@ -21,6 +22,7 @@ struct InnerClient<'a> {
     host: Url,
     client: reqwest::Client,
     speakers: Vec<model::Speaker<'a>>,
+    cache: Cache<(String, model::SpeakerId), Bytes>,
 }
 
 impl Client {
@@ -95,11 +97,14 @@ impl Client {
             })
             .collect();
 
+        let cache = Cache::new(10000);
+
         Client {
             inner: Arc::new(InnerClient {
                 host,
                 client,
                 speakers,
+                cache,
             }),
         }
     }
@@ -132,6 +137,11 @@ impl Client {
     }
 
     pub async fn tts(&self, text: &str, speaker_id: model::SpeakerId) -> Result<Bytes, ()> {
+        if let Some(cached) = &self.inner.cache.get(&(text.to_string(), speaker_id)).await {
+            println!("cached! {text}");
+            return Ok(cached.clone());
+        }
+
         let url = self.inner.host.clone().tap_mut(|u| {
             u.path_segments_mut().unwrap().push("audio_query");
             u.query_pairs_mut()
@@ -167,6 +177,13 @@ impl Client {
             .error_for_status()
             .map_err(|_| ())?;
 
-        Ok(resp.bytes().await.unwrap())
+        let bytes = resp.bytes().await.unwrap();
+
+        self.inner
+            .cache
+            .insert((text.to_string(), speaker_id), bytes.clone())
+            .await;
+
+        Ok(bytes)
     }
 }

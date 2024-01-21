@@ -11,5 +11,6 @@ apt-get install -qq -y --no-install-recommends \
 
 rm -rf /var/lib/apt/lists/*
 
-mkdir /var/discordtts
-echo '{"voice_settings":{},"dictionary":{"a":"b"}}' > /var/discordtts/state.json
+mkdir /var/discordtts/db -p
+mkdir /var/discordtts/emoji-ja -p
+echo '{"voice_settings":{},"dictionary":{}}' > /var/discordtts/db/db.json

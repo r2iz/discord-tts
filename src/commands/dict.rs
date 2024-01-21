@@ -72,14 +72,22 @@ pub async fn run(ctx: &Context, interaction: CommandInteraction) {
                 let key = data.next().unwrap().value.as_str().unwrap();
                 let value = data.next().unwrap().value.as_str().unwrap();
                 PERSISTENT_DB.store_dictionary_word(key, value);
-                simple_resp_helper(&interaction, ctx, format!("Added {key} => {value}").as_str(), false).await
+                simple_resp_helper(
+                    &interaction,
+                    ctx,
+                    format!("Added {key} => {value}").as_str(),
+                    false,
+                )
+                .await
             }
             _ => simple_resp_helper(&interaction, ctx, "Unknown Error", true).await,
         },
         "remove" => match &option.value {
             serenity::all::CommandDataOptionValue::SubCommand(c) => {
                 let key = c.first().unwrap().value.as_str().unwrap();
-                simple_resp_helper(&interaction, ctx, format!("TODO!").as_str(), false).await
+                PERSISTENT_DB.remove_dictionary_word(key);
+                simple_resp_helper(&interaction, ctx, format!("Removed {key}").as_str(), false)
+                    .await
             }
             _ => simple_resp_helper(&interaction, ctx, "Unknown Error", true).await,
         },
