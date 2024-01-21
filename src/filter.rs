@@ -9,7 +9,8 @@ use serenity::{
     prelude::Mentionable,
 };
 
-use crate::db::INMEMORY_DB;
+use crate::db::PERSISTENT_DB;
+use crate::db::{EMOJI_DB, INMEMORY_DB};
 
 // regex crate's named capture
 #[allow(clippy::invalid_regex)]
@@ -38,6 +39,8 @@ where
     let s = replace_uri(&s);
     let s = replace_codeblock(&s);
     let s = suppress_whitespaces(&s)?;
+    let s = process_dictionary(&s);
+    let s = process_emoji(&s);
 
     Some(s.to_string())
 }
@@ -114,6 +117,26 @@ fn replace_emoji(mes: &str) -> Cow<'_, str> {
 #[inline]
 fn replace_codeblock(mes: &str) -> Cow<'_, str> {
     CODEBLOCK_REGEX.replace_all(mes, "。コード省略。")
+}
+
+fn process_dictionary(mes: &str) -> String {
+    let mut s = mes.to_string();
+
+    for (word, replacement) in PERSISTENT_DB.get_dictionary() {
+        s = s.replace(word.as_str(), replacement.as_str());
+    }
+
+    s
+}
+
+fn process_emoji(mes: &str) -> String {
+    let mut s = mes.to_string();
+
+    for (word, replacement) in EMOJI_DB.get_dictionary().as_ref() {
+        s = s.replace(word.as_str(), replacement.as_str());
+    }
+
+    s
 }
 
 #[test]

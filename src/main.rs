@@ -42,6 +42,7 @@ impl EventHandler for Bot {
                 commands::leave::register(&self.prefix),
                 commands::skip::register(&self.prefix),
                 commands::speaker::register(&self.prefix),
+                commands::dict::register(&self.prefix)
             ],
         )
         .await
@@ -95,6 +96,7 @@ impl EventHandler for Bot {
                 s if s == format!("{prefix}join") => commands::join::run(&ctx, command).await,
                 s if s == format!("{prefix}leave") => commands::leave::run(&ctx, command).await,
                 s if s == format!("{prefix}skip") => commands::skip::run(&ctx, command).await,
+                s if s == format!("{prefix}dict") => commands::dict::run(&ctx, command).await,
                 _ => unreachable!("Unknown command: {}", command.data.name),
             },
             Interaction::Component(interaction) => {
