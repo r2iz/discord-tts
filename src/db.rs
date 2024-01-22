@@ -4,10 +4,12 @@ use std::io::{BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
+use anyhow::Ok;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serenity::model::prelude::{ChannelId, GuildId, UserId};
 
+use crate::sozai;
 use crate::voicevox::model::SpeakerId;
 
 pub static PERSISTENT_DB: Lazy<PersistentDB> = Lazy::new(|| {
@@ -26,7 +28,7 @@ pub struct PersistentDB {
 }
 
 impl PersistentDB {
-    fn new(file: &Path) -> Result<Self, std::io::Error> {
+    fn new(file: &Path) -> anyhow::Result<Self> {
         let data =
             serde_json::from_reader(BufReader::new(File::open(file)?)).expect("DB is corrupt");
 
@@ -99,6 +101,7 @@ impl PersistentDB {
 
 struct InmemoryStructure {
     instances: HashMap<GuildId, ChannelId>,
+    sozai_map: HashMap<String, String>,
 }
 
 pub struct InmemoryDB {
@@ -112,6 +115,7 @@ impl InmemoryDB {
         Self {
             data: RwLock::new(InmemoryStructure {
                 instances: HashMap::new(),
+                sozai_map: HashMap::new(),
             }),
         }
     }
@@ -136,6 +140,15 @@ impl InmemoryDB {
     pub fn destroy_instance(&self, guild_id: GuildId) {
         self.data.write().unwrap().instances.remove(&guild_id);
     }
+
+    pub fn get_sozai_url(&self, key: &str) -> Option<String> {
+        self.data.read().unwrap().sozai_map.get(key).map(std::borrow::ToOwned::to_owned)
+    }
+
+    pub async fn init_sozai_map(&self, index_url: &str) -> anyhow::Result<()> {
+        sozai::init(&mut self.data.write().unwrap().sozai_map, index_url).await?;
+        Ok(())
+    }
 }
 
 pub static EMOJI_DB: Lazy<EmojiDB> = Lazy::new(|| {
@@ -153,7 +166,7 @@ pub struct EmojiDB {
 }
 
 impl EmojiDB {
-    fn new(file: &Path) -> Result<Self, std::io::Error> {
+    fn new(file: &Path) -> anyhow::Result<Self> {
         let mut json: HashMap<String, EmojiStructure> =
             serde_json::from_reader(BufReader::new(File::open(file)?))
                 .expect("Emoji DB is corrupt");

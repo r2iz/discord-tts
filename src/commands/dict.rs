@@ -1,6 +1,5 @@
-use serde::de::value;
 use serenity::{
-    all::{CommandData, CommandInteraction, CommandOptionType},
+    all::{CommandInteraction, CommandOptionType},
     builder::{CreateCommand, CreateCommandOption},
     client::Context,
 };
@@ -78,7 +77,7 @@ pub async fn run(ctx: &Context, interaction: CommandInteraction) {
                     format!("Added {key} => {value}").as_str(),
                     false,
                 )
-                .await
+                .await;
             }
             _ => simple_resp_helper(&interaction, ctx, "Unknown Error", true).await,
         },
@@ -87,11 +86,10 @@ pub async fn run(ctx: &Context, interaction: CommandInteraction) {
                 let key = c.first().unwrap().value.as_str().unwrap();
                 PERSISTENT_DB.remove_dictionary_word(key);
                 simple_resp_helper(&interaction, ctx, format!("Removed {key}").as_str(), false)
-                    .await
+                    .await;
             }
             _ => simple_resp_helper(&interaction, ctx, "Unknown Error", true).await,
         },
         _ => simple_resp_helper(&interaction, ctx, "Unknown Error", true).await,
     }
-    return;
 }

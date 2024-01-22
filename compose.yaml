@@ -9,3 +9,4 @@ services:
     volumes:
       - ./db:/var/discordtts/db
       - ./emoji-ja:/var/discordtts/emoji-ja
+    network_mode: host
