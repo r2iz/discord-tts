@@ -54,51 +54,49 @@ impl EventHandler for Bot {
     }
 
     async fn message(&self, ctx: Context, msg: Message) {
-        let Some(content) = filter::filter(&ctx, &msg).await else {
+        let Some(content) = filter::filter(&ctx, &msg.clone()).await else {
             return;
         };
+        if let Some(url) = INMEMORY_DB.get_sozai_url(&msg.content) {
+            let client = HttpRequest::new(reqwest::Client::new(), url.clone());
 
-        for line in content.split('\n') {
-            if let Some(url) = INMEMORY_DB.get_sozai_url(line) {
-                let client = HttpRequest::new(reqwest::Client::new(), url.clone());
+            let manager = songbird::get(&ctx)
+                .await
+                .expect("Songbird is not initialized");
 
-                let manager = songbird::get(&ctx)
+            let handler = manager.get(msg.guild_id.unwrap()).unwrap();
+
+            let track = handler.lock().await.enqueue_input(client.into()).await;
+            track.set_volume(0.3).unwrap();
+        } else {
+            let speaker = PERSISTENT_DB.get_speaker_id(msg.author.id);
+
+            let manager = songbird::get(&ctx)
+                .await
+                .expect("Songbird is not initialized");
+
+            let handler = manager.get(msg.guild_id.unwrap()).unwrap();
+
+            let Ok(wav) = self.voicevox.tts(&content, speaker).await else {
+                msg.reply(&ctx.http, "Error: Failed to synthesise a message")
                     .await
-                    .expect("Songbird is not initialized");
-
-                let handler = manager.get(msg.guild_id.unwrap()).unwrap();
-
-                handler.lock().await.enqueue_input(client.into()).await;
-            } else {
-                let speaker = PERSISTENT_DB.get_speaker_id(msg.author.id);
-
-                let manager = songbird::get(&ctx)
-                    .await
-                    .expect("Songbird is not initialized");
-
-                let handler = manager.get(msg.guild_id.unwrap()).unwrap();
-
-                let Ok(wav) = self.voicevox.tts(&content, speaker).await else {
-                    msg.reply(&ctx.http, "Error: Failed to synthesise a message")
-                        .await
-                        .unwrap();
-                    return;
-                };
-
-                handler
-                    .lock()
-                    .await
-                    .enqueue_input(
-                        songbird::input::RawAdapter::new(
-                            wavsource::WavSource::new(&mut Cursor::new(wav)),
-                            48000,
-                            1,
-                        )
-                        .into(),
-                    )
-                    .await;
+                    .unwrap();
+                return;
             };
-        }
+
+            handler
+                .lock()
+                .await
+                .enqueue_input(
+                    songbird::input::RawAdapter::new(
+                        wavsource::WavSource::new(&mut Cursor::new(wav)),
+                        48000,
+                        1,
+                    )
+                    .into(),
+                )
+                .await;
+        };
     }
 
     async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
@@ -162,7 +160,10 @@ async fn main() {
         .await
         .expect("Failed to create client");
 
-    INMEMORY_DB.init_sozai_map(&CONFIG.sozai_index_url).await.unwrap();
+    INMEMORY_DB
+        .init_sozai_map(&CONFIG.sozai_index_url)
+        .await
+        .unwrap();
 
     tokio::spawn(async move {
         let _: Result<_, _> = client
