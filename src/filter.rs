@@ -16,8 +16,9 @@ use crate::db::{EMOJI_DB, INMEMORY_DB};
 #[allow(clippy::invalid_regex)]
 static CHANNEL_MENTION_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"<#(?<id>\d+)>").unwrap());
 static CODEBLOCK_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?sm)```.+```").unwrap());
-static EMOJI_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(<a?:\w+:\d+>|:\w+:)").unwrap());
-static URI_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"\S+:\S+").unwrap());
+static EXTERNAL_EMOJI_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"<a?:\w+:\d+>").unwrap());
+static EMOJI_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r":\w+:").unwrap());
+static URI_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"[A-Za-z][A-Za-z0-9+\-.]*:\S+").unwrap());
 
 pub async fn filter<T>(ctx: T, mes: &'_ Message) -> Option<String>
 where
@@ -35,14 +36,59 @@ where
     let s = legacy_command_compatibility(&s)?;
     let s = legacy_ping_command_compatibility(s)?;
     let s = suppress_by_semicolon(s)?;
-    let s = replace_emoji(s);
+
+    // `<a:emoji_identifier:123456789>` should be treated as a single emoji and not `<a:emoji_。URI省略。>`,
+    // so replace_external_emoji must precede replace_uri.
+    // On the other hand, `protocol:host:23` should be treated as a `。URI省略。` and not `protocol23` (:host: replaced by `replace_emoji`),
+    // so replace_uri must precede replace_emoji.
+    //
+    // The order `replace_external_emoji` -> `replace_uri` -> `replace_emoji` rests upon the observation that
+    // an external_emoji cannot be a part of an URI (since an URI cannot contain a letter "<", as per RFC3986),
+    // and the design decision that we want to treat a string like `<a:crime:1238318711>` as a single `external_emoji` and not
+    // `<。URI省略。>` or `<a:。URI省略。>`. I mean, why would anyone enclose a strange URI within a pair of angle brackets?
+    let s = replace_external_emoji(s);
     let s = replace_uri(&s);
+    let s = replace_emoji(&s);
+    let s = replace_unicode_emoji(&s);
+    // Attachment::dimensions: If this attachment is an image, then a tuple of the width and height in pixels is returned.
+    let s = append_image_attachment_notification(
+        &s,
+        mes.attachments
+            .iter()
+            .filter_map(|a| a.dimensions())
+            .count(),
+    );
+
     let s = replace_codeblock(&s);
     let s = suppress_whitespaces(&s)?;
     let s = process_dictionary(&s);
-    let s = process_emoji(&s);
 
     Some(s.to_string())
+}
+
+fn append_image_attachment_notification(body: &str, image_count: usize) -> Cow<'_, str> {
+    if image_count > 0 {
+        let image_text = if image_count == 1 {
+            "画像".to_string()
+        } else {
+            format!("画像{}枚", image_count)
+        };
+
+        let mut ret = body.to_string();
+
+        if !body.is_empty() {
+            ret.push('。');
+            ret.push_str(&image_text);
+            ret.push_str("添付");
+        } else {
+            ret.push_str(&image_text);
+            ret.push_str("が送信されました");
+        }
+
+        ret.into()
+    } else {
+        body.into()
+    }
 }
 
 async fn sanity_mention<T>(ctx: T, mes: &Message) -> String
@@ -51,22 +97,24 @@ where
 {
     let mut s = mes.content.to_string();
 
-    for m in &mes.mentions {
-        let name = m
-            .nick_in(&ctx, mes.guild_id.unwrap())
-            .await
-            .unwrap_or(m.global_name.clone().unwrap_or(m.name.clone()));
+    let guild = mes.guild(&ctx.cache().unwrap()).unwrap();
 
-        s = Regex::new(&m.id.mention().to_string())
+    for m in &mes.mentions {
+        let name = guild
+            .members
+            .get(&m.id)
             .unwrap()
-            .replace_all(&s, format!("。宛、{name}。"))
-            .to_string();
+            .nick
+            .as_ref()
+            .unwrap_or(m.global_name.as_ref().unwrap_or(&m.name));
+
+        s = s.replace(&m.id.mention().to_string(), &format!("。宛、{name}。"));
     }
 
     for m in &mes.mention_roles {
-        let re = Regex::new(&m.mention().to_string()).unwrap();
-        let name = m.to_role_cached(&ctx).unwrap().name;
-        s = re.replace_all(&s, format!("。宛、{name}。")).to_string();
+        let name = guild.roles.get(&m).unwrap().name.as_str();
+
+        s = s.replace(&m.mention().to_string(), &format!("。宛、{name}。"));
     }
 
     let channel_mentions: Vec<ChannelId> = CHANNEL_MENTION_REGEX
@@ -76,9 +124,8 @@ where
         .collect();
 
     for m in &channel_mentions {
-        let re = Regex::new(&m.mention().to_string()).unwrap();
-        let name = m.name(&ctx).await.unwrap();
-        s = re.replace_all(&s, format!("。宛、{name}。")).to_string();
+        let name = guild.channels.get(&m).unwrap().name();
+        s = s.replace(&m.mention().to_string(), &format!("。宛、{name}。"));
     }
 
     s
@@ -110,6 +157,11 @@ fn replace_uri(mes: &str) -> Cow<'_, str> {
 }
 
 #[inline]
+fn replace_external_emoji(mes: &str) -> Cow<'_, str> {
+    EXTERNAL_EMOJI_REGEX.replace_all(mes, "")
+}
+
+#[inline]
 fn replace_emoji(mes: &str) -> Cow<'_, str> {
     EMOJI_REGEX.replace_all(mes, "")
 }
@@ -129,7 +181,8 @@ fn process_dictionary(mes: &str) -> String {
     s
 }
 
-fn process_emoji(mes: &str) -> String {
+#[inline]
+fn replace_unicode_emoji(mes: &str) -> String {
     let mut s = mes.to_string();
 
     for (word, replacement) in EMOJI_DB.get_dictionary().as_ref() {
@@ -154,6 +207,15 @@ fn replace_rule_unit_test() {
     assert_eq!(replace_uri("hello"), "hello");
     assert_eq!(replace_uri("ms-settings:privacy-microphone"), "。URI省略。");
     assert_eq!(
+        replace_uri("some.strange-protocol+ver2:pathpathpath"),
+        "。URI省略。"
+    );
+    assert_eq!(
+        replace_uri("20:40に秋葉原にて待つ"),
+        "20:40に秋葉原にて待つ"
+    );
+    assert_eq!(replace_uri("abc,def://nyan.com:22/mofu"), "abc,。URI省略。");
+    assert_eq!(
         replace_uri("そこから ms-settings:privacy-microphone を開いて"),
         "そこから 。URI省略。 を開いて"
     );
@@ -164,7 +226,10 @@ fn replace_rule_unit_test() {
 
     assert_eq!(replace_emoji("hello!"), "hello!");
     assert_eq!(replace_emoji("hello:emoji:!"), "hello!");
-    assert_eq!(replace_emoji("hello<:emoji:012345678901234567>!"), "hello!");
+    assert_eq!(
+        replace_external_emoji("hello<:emoji:012345678901234567>!"),
+        "hello!"
+    );
 
     assert_eq!(
         replace_codeblock("Codeblock ```Inline``` !"),
@@ -173,5 +238,23 @@ fn replace_rule_unit_test() {
     assert_eq!(
         replace_codeblock("Codeblock\n```\nMultiline\n```\n!"),
         "Codeblock\n。コード省略。\n!"
+    );
+    assert_eq!(append_image_attachment_notification("", 0), "");
+    assert_eq!(
+        append_image_attachment_notification("", 1),
+        "画像が送信されました"
+    );
+    assert_eq!(
+        append_image_attachment_notification("", 4),
+        "画像4枚が送信されました"
+    );
+    assert_eq!(append_image_attachment_notification("あ", 0), "あ");
+    assert_eq!(
+        append_image_attachment_notification("あ", 1),
+        "あ。画像添付"
+    );
+    assert_eq!(
+        append_image_attachment_notification("あ", 4),
+        "あ。画像4枚添付"
     );
 }

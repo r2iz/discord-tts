@@ -1,4 +1,4 @@
-FROM rust:1.74.1-bookworm as build-env
+FROM rust:1.81.0-bookworm as build-env
 LABEL maintainer="yanorei32"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -20,13 +20,15 @@ RUN	cargo install cargo-license && cargo license \
 	--avoid-dev-deps \
 	--avoid-build-deps \
 	--filter-platform "$(rustc -vV | sed -n 's|host: ||p')" \
-	> CREDITS
+	> CREDITS && \
+	echo 'emoji-ja: 94e387b36d2edd1239f3a2b8ca1324b963596855, "MIT", by, yag_ays' >> CREDITS
 
 RUN cargo build --release
 COPY src/ /usr/src/discord-tts/src/
+COPY assets/ /usr/src/discord-tts/assets/
 RUN touch src/**/* src/* && cargo build --release
 
-FROM debian:bookworm-slim@sha256:45287d89d96414e57c7705aa30cb8f9836ef30ae8897440dd8f06c4cff801eec
+FROM debian:bookworm-slim@sha256:7095ea629c4563714b9655137db2eacd456eb3eea0eb8a2b0a4a6b0b187220a9
 
 WORKDIR /init
 COPY init.sh /init/

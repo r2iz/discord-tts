@@ -4,7 +4,6 @@ use std::io::{BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
-use anyhow::Ok;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use serenity::model::prelude::{ChannelId, GuildId, UserId};
@@ -142,7 +141,12 @@ impl InmemoryDB {
     }
 
     pub fn get_sozai_url(&self, key: &str) -> Option<String> {
-        self.data.read().unwrap().sozai_map.get(key).map(std::borrow::ToOwned::to_owned)
+        self.data
+            .read()
+            .unwrap()
+            .sozai_map
+            .get(key)
+            .map(std::borrow::ToOwned::to_owned)
     }
 
     pub async fn init_sozai_map(&self, index_url: &str) -> anyhow::Result<()> {
@@ -151,9 +155,8 @@ impl InmemoryDB {
     }
 }
 
-pub static EMOJI_DB: Lazy<EmojiDB> = Lazy::new(|| {
-    EmojiDB::new(&crate::config::CONFIG.emoji_path).expect("Failed to initialize emoji DB")
-});
+pub static EMOJI_DB: Lazy<EmojiDB> =
+    Lazy::new(|| EmojiDB::new().expect("Failed to initialize emoji DB"));
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct EmojiStructure {
@@ -161,18 +164,14 @@ struct EmojiStructure {
 }
 
 pub struct EmojiDB {
-    file: PathBuf,
     data: Arc<HashMap<String, String>>,
 }
 
 impl EmojiDB {
-    fn new(file: &Path) -> anyhow::Result<Self> {
-        let mut json: HashMap<String, EmojiStructure> =
-            serde_json::from_reader(BufReader::new(File::open(file)?))
-                .expect("Emoji DB is corrupt");
-
-        let need_remove_keys = ["。", "、"];
-        need_remove_keys.map(|k| json.remove(k).unwrap());
+    fn new() -> Result<Self, std::io::Error> {
+        let json: HashMap<String, EmojiStructure> =
+            serde_json::from_str(include_str!("../assets/emoji_ja.json"))
+                .expect("Emoji DB is corrupted");
 
         let data = Arc::new(
             json.iter()
@@ -180,10 +179,7 @@ impl EmojiDB {
                 .collect(),
         );
 
-        Ok(Self {
-            file: file.into(),
-            data,
-        })
+        Ok(Self { data })
     }
 
     pub fn get_dictionary(&self) -> Arc<HashMap<String, String>> {
