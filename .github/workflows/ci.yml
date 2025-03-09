@@ -97,7 +97,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           tags: |
-            ghcr.io/sim1222/discord-tts:${{ steps.tagname.outputs.version }}
+            ghcr.io/steve-0628/discord-tts:${{ steps.tagname.outputs.version }}
 
       - name: Build and Push
         uses: docker/build-push-action@v6.9.0
@@ -109,4 +109,4 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           tags: |
-            ghcr.io/sim1222/discord-tts:${{ steps.tagname.outputs.version }}
+            ghcr.io/steve-0628/discord-tts:${{ steps.tagname.outputs.version }}
