@@ -47,6 +47,7 @@ where
     // and the design decision that we want to treat a string like `<a:crime:1238318711>` as a single `external_emoji` and not
     // `<。URI省略。>` or `<a:。URI省略。>`. I mean, why would anyone enclose a strange URI within a pair of angle brackets?
     let s = replace_external_emoji(s);
+    let s = suppress_by_exclamation(&s)?;
     let s = replace_uri(&s);
     let s = replace_emoji(&s);
     let s = replace_unicode_emoji(&s);
@@ -144,6 +145,11 @@ fn legacy_ping_command_compatibility(mes: &str) -> Option<&str> {
 #[inline]
 fn suppress_by_semicolon(mes: &str) -> Option<&str> {
     (!mes.starts_with(';') || mes.starts_with(";;")).then_some(mes)
+}
+
+#[inline]
+fn suppress_by_exclamation(mes: &str) -> Option<&str> {
+    (!mes.starts_with('!')).then_some(mes)
 }
 
 #[inline]
