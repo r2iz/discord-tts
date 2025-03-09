@@ -1,6 +1,6 @@
 use serenity::{builder::CreateCommand, client::Context, model::application::CommandInteraction};
 
-use crate::commands::simple_resp_helper;
+use crate::{commands::simple_resp_helper, db::INMEMORY_DB};
 
 pub fn register(prefix: &str) -> CreateCommand {
     CreateCommand::new(format!("{prefix}leave"))
@@ -19,6 +19,8 @@ pub async fn run(ctx: &Context, interaction: CommandInteraction) {
         simple_resp_helper(&interaction, ctx, "Not in a voice channel", true).await;
         return;
     };
+
+    INMEMORY_DB.destroy_instance(guild_id);
 
     simple_resp_helper(&interaction, ctx, "Connection has been closed.", false).await;
 }
