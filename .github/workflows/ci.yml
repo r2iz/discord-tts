@@ -92,21 +92,21 @@ jobs:
         if: "! startsWith(github.ref, 'refs/pull/')"
         with:
           context: .
-          platforms: linux/amd64
+          platforms: linux/amd64, linux/arm64
           push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
           tags: |
-            ghcr.io/steve-0628/discord-tts:${{ steps.tagname.outputs.version }}
+            ghcr.io/r2iz/discord-tts:${{ steps.tagname.outputs.version }}
 
       - name: Build and Push
         uses: docker/build-push-action@v6.9.0
         if: "startsWith(github.ref, 'refs/pull/')"
         with:
           context: .
-          platforms: linux/amd64
+          platforms: linux/amd64, linux/arm64
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
           tags: |
-            ghcr.io/steve-0628/discord-tts:${{ steps.tagname.outputs.version }}
+            ghcr.io/r2iz/discord-tts:${{ steps.tagname.outputs.version }}
