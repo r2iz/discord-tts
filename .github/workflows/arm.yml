@@ -1,0 +1,112 @@
+name: arm64 build
+
+on:
+    pull_request:
+        paths:
+            - "Dockerfile"
+            - "src/**"
+            - "Cargo.toml"
+            - "Cargo.lock"
+            - ".github/workflows/ci.yml"
+    push:
+        branches:
+            - "master"
+        tags:
+            - v*
+
+env:
+    CARGO_INCREMENTAL: 0
+    # キャッシュ破棄
+    RUST_CACHE_VERSION: v1
+
+jobs:
+    rust:
+        runs-on: ubuntu-22.04-arm
+
+        steps:
+            - name: Install cmake
+              run: |
+                  # depName=ubuntu_22_04/cmake
+                  CMAKE_VERSION="3.22.1-1ubuntu1.22.04.2"
+                  sudo apt-get -y update
+                  sudo apt-get install -y "cmake=${CMAKE_VERSION}" "cmake-data=${CMAKE_VERSION}" --no-install-recommends
+
+            - uses: actions/checkout@d632683dd7b4114ad314bca15554477dd762a938 # v4.2.0
+
+            - uses: actions-rs/toolchain@v1.0.7
+              with:
+                  toolchain: stable
+                  components: clippy
+                  override: true
+
+            - name: cache dependencies
+              uses: Swatinem/rust-cache@v2.7.3
+              with:
+                  prefix-key: ${{ env.RUST_CACHE_VERSION }}-rust
+
+            - name: clippy check
+              uses: actions-rs/clippy-check@v1.0.7
+              with:
+                  token: ${{ secrets.GITHUB_TOKEN }}
+                  args: --all-features
+
+            - name: compile for unit test
+              uses: actions-rs/cargo@v1.0.3
+              with:
+                  command: test
+                  args: --no-run --locked
+
+            - name: unit test
+              uses: actions-rs/cargo@v1.0.3
+              with:
+                  command: test
+
+            - uses: actions-rs/cargo@v1.0.3
+              with:
+                  command: build
+                  args: --release
+
+            - uses: docker/setup-buildx-action@v3.7.1
+
+            - uses: docker/login-action@v3.3.0
+              with:
+                  registry: ghcr.io
+                  username: ${{ github.repository_owner }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Create tagname
+              id: tagname
+              run: |
+                  VERSION="$(echo "${{ github.ref }}" | sed -e 's,.*/\(.*\),\1,')"
+                  # 2193: ${{ github.ref }} will replaced by GitHub Actions
+                  # shellcheck disable=SC2193
+                  [[ "${{ github.ref }}" == refs/tags/* ]] && VERSION="${VERSION/v/}"
+                  [[ "$VERSION" == "master" ]] && VERSION=latest
+                  # shellcheck disable=SC2193
+                  [[ "${{ github.ref }}" == refs/pull/* ]] && VERSION=dontpush
+                  echo "$VERSION"
+                  echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+            - name: Build and Push
+              uses: docker/build-push-action@v6.9.0
+              if: "! startsWith(github.ref, 'refs/pull/')"
+              with:
+                  context: .
+                  platforms: linux/arm64
+                  push: true
+                  cache-from: type=gha
+                  cache-to: type=gha,mode=max
+                  tags: |
+                      ghcr.io/r2iz/discord-tts:${{ steps.tagname.outputs.version }}
+
+            - name: Build and Push
+              uses: docker/build-push-action@v6.9.0
+              if: "startsWith(github.ref, 'refs/pull/')"
+              with:
+                  context: .
+                  platforms: linux/arm64
+                  push: false
+                  cache-from: type=gha
+                  cache-to: type=gha,mode=max
+                  tags: |
+                      ghcr.io/r2iz/discord-tts:${{ steps.tagname.outputs.version }}
